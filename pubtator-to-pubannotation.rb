@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 require 'ox'
 require 'json'
+require 'zlib'
+require 'rubygems/package'
 
 def PubTatorBioC_to_PubAnnotationJSON(xml_file, mode = nil)
 	mode ||= :go
@@ -124,9 +126,9 @@ if __FILE__ == $0
 		end
 	end
 
-	ARGV.each do |f|
+	def process_xml_content(xml_content, f, odir, mode)
 		## read files
-		xml_file = File.read(f)
+		#xml_file = File.read(f)
 		puts "processing #{f}"
 
 		total_annotations = 0
@@ -138,7 +140,7 @@ if __FILE__ == $0
 		outfilename = "#{filebase}jsonl"
 		outfilepath = File.join(odir, outfilename) unless odir.nil?
 		File.open(outfilepath, 'w') do |outfile|
-			PubTatorBioC_to_PubAnnotationJSON(xml_file, mode) do |annotations, annotations_count, invalids_count, fixed_count, skipped_count|
+			PubTatorBioC_to_PubAnnotationJSON(xml_content, mode) do |annotations, annotations_count, invalids_count, fixed_count, skipped_count|
 				outfile.write(annotations.to_json + "\n")
 				total_annotations += annotations_count
 				total_invalids += invalids_count
@@ -152,4 +154,29 @@ if __FILE__ == $0
 		puts "    Fixed annotations: #{total_fixed} (#{100 * total_fixed.to_f/total_invalids}%)"
 		puts "    Skipped_annotations: #{total_skipped}"
 	end
+
+	ARGV.each do |f|
+		if f.end_with?('.tar.gz')
+		    puts "Extracting .tar.gz file: #{f}"
+		    Zlib::GzipReader.open(f) do |gz|
+		      Gem::Package::TarReader.new(gz) do |tar|
+		        tar.each do |entry|
+		          next unless entry.file? && entry.full_name =~ /\.xml$/i
+		          puts "Processing file in tar: #{entry.full_name}"
+
+            	  # Read the file content directly from the tar archive
+            	  xml_content = entry.read
+            	  process_xml_content(xml_content, entry.full_name, odir, mode)
+        		end
+      		  end
+    		end
+		elsif f =~ /\.xml$/i
+		  # Process regular XML file from filesystem
+    	  xml_content = File.read(f)
+    	  process_xml_content(xml_content, f, odir, mode)
+		else
+    	  puts "Unsupported file type: #{f}"
+		end
+	end
+
 end
