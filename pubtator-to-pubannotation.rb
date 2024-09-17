@@ -75,8 +75,11 @@ end
 
 def get_adjustment(text, s_beg, s_end, lex)
 	window_size = 5
+	window_size = s_beg if s_beg < window_size
+	return nil unless window_size > 0
+
 	window = text[(s_beg - window_size) ... (s_end - 1)]
-	r = window.rindex(lex)
+	r = window&.rindex(lex)
 	r.nil? ? nil : r - window_size
 end
 
