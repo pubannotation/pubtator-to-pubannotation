@@ -57,7 +57,19 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 					unless fixed
 						if option[:verbose_p]
 							# invalid annotations are reported
-							warn "[#{docid}:#{id}] WARNING text mismatch (#{s_beg}, #{s_end}) : [#{text[s_beg ... s_end]}] vs [#{lex}]" if text[s_beg ... s_end] != lex
+							if s_beg < 0
+								warn "[#{docid}:#{id}] WARNING invalid beginning offset : (#{s_beg}, #{s_end}) [#{lex}]"
+							elsif s_end > text.length
+								warn "[#{docid}:#{id}] WARNING invalid ending offset (max: #{text.length}) : (#{s_beg}, #{s_end}) [#{lex}] vs |#{text[-10 .. -1]}|"
+							elsif s_beg > s_end
+								warn "[#{docid}:#{id}] WARNING invalid order of beginning/ending offsets : (#{s_beg}, #{s_end}) [#{lex}]"
+							elsif text[s_beg ... s_end] != lex
+								w_begin = s_beg - WINDOW_SIZE
+								w_end = s_end + WINDOW_SIZE
+								w_begin = 0 if w_begin < 0
+								w_end = text.length if w_end > text.length
+								warn "[#{docid}:#{id}] WARNING text mismatch : (#{s_beg}, #{s_end}) [#{lex}] vs |#{text[w_begin ... s_beg]}[#{text[s_beg ... s_end]}]#{text[s_end ... w_end]}|"
+							end
 						end
 
 						if option[:skip_p]
@@ -81,14 +93,21 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 end
 
 def get_adjustment(text, s_beg, s_end, lex)
-	buffer_beg = s_beg - BUFFER_SIZE
-	buffer_beg = 0 if buffer_beg < 0
-	buffer_end = s_end + BUFFER_SIZE
-	buffer_end = text.length if buffer_end > text.length
+	b_beg = s_beg - BUFFER_SIZE
+	if b_beg < 0
+		b_beg = 0
+		b_end = [BUFFER_SIZE + lex.length, text.length].min
+	else
+		b_end = s_end + BUFFER_SIZE
+		if b_end > text.length
+			b_end = text.length
+			b_beg = [b_end - lex.length - BUFFER_SIZE, 0].max
+		end
+	end
 
-	buffered_text = text[buffer_beg ... buffer_end]
-	r = buffered_text&.rindex(lex)
-	r.nil? ? nil : r - buffer_beg
+	b_text = text[b_beg ... b_end]
+	r = b_text&.rindex(lex)
+	r.nil? ? nil : r - b_beg
 end
 
 def process_xml_content(xml_content, f, odir, option = {})
