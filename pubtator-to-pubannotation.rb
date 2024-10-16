@@ -93,6 +93,8 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 end
 
 def get_adjustment(text, s_beg, s_end, lex)
+	return nil if lex.nil? || lex.empty?
+
 	b_beg = s_beg - BUFFER_SIZE
 	if b_beg < 0
 		b_beg = 0
@@ -132,13 +134,13 @@ def process_xml_content(xml_content, f, odir, option = {})
 			sum_skipped += skipped_count
 		end
 	rescue => e
-		warn "    Something went wrong: " + e.message
+		warn "    ERROR Something went wrong: " + e.message
 	end
 
 	rate_invalids = 100 * sum_invalids.to_f / sum_annotations
 	rate_fixed = 100 * sum_fixed.to_f / sum_invalids
 
-	puts "    All annotation: #{sum_annotations}"
+	puts "    All annotations: #{sum_annotations}"
 	puts "    Invalid annotations: #{sum_invalids} (#{rate_invalids.round(2) }%)"
 	puts "    Fixed annotations: #{sum_fixed} (#{rate_fixed.round(2)}%)" if sum_invalids > 0
 	puts "    Skipped_annotations: #{sum_skipped}"
