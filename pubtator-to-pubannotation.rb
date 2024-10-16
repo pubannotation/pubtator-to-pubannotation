@@ -4,14 +4,17 @@ require 'json'
 require 'zlib'
 require 'rubygems/package'
 
-def PubTatorBioC_to_PubAnnotationJSON(xml_file, mode = nil)
-	mode ||= :go
+BUFFER_SIZE = 20
+WINDOW_SIZE	= 10
+
+def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 	annotations_count = 0
 	invalids_count = 0
 	fix_count = 0
 	skip_count = 0
 
 	parsed_xml = Ox.parse(xml_file)
+
 	parsed_xml.locate('collection/document').each do |doc|
 		docid = doc.locate('id').first.text
 
@@ -36,11 +39,11 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, mode = nil)
 				lex = annotation.locate('text').first.text
 
 				# handling invalid annotations
-				if mode != :go && text[s_beg ... s_end] != lex
+				if text[s_beg ... s_end] != lex
 					invalids_count += 1
 
 					fixed = false
-					if mode == :fix
+					if option[:fix_p]
 						# invalid annotations are fixed and counted
 						adjustment = get_adjustment(text, s_beg, s_end, lex)
 						unless adjustment.nil?
@@ -52,13 +55,15 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, mode = nil)
 					end
 
 					unless fixed
-						if mode == :skip
+						if option[:verbose_p]
+							# invalid annotations are reported
+							warn "[#{docid}:#{id}] WARNING text mismatch (#{s_beg}, #{s_end}) : [#{text[s_beg ... s_end]}] vs [#{lex}]" if text[s_beg ... s_end] != lex
+						end
+
+						if option[:skip_p]
 							# invalid annotations are counted and skipped
 							skip_count += 1
 							next
-						elsif mode == :report
-							# invalid annotations are reported
-							warn "[#{docid}:#{id}] WARNING text mismatch (#{s_beg}, #{s_end}) : [#{text[s_beg ... s_end]}] vs [#{lex}]" if text[s_beg ... s_end] != lex
 						end
 					end
 				end
@@ -76,19 +81,60 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, mode = nil)
 end
 
 def get_adjustment(text, s_beg, s_end, lex)
-	window_size = 5
-	window_size = s_beg if s_beg < window_size
-	return nil unless window_size > 0
+	buffer_beg = s_beg - BUFFER_SIZE
+	buffer_beg = 0 if buffer_beg < 0
+	buffer_end = s_end + BUFFER_SIZE
+	buffer_end = text.length if buffer_end > text.length
 
-	window = text[(s_beg - window_size) ... (s_end - 1)]
-	r = window&.rindex(lex)
-	r.nil? ? nil : r - window_size
+	buffered_text = text[buffer_beg ... buffer_end]
+	r = buffered_text&.rindex(lex)
+	r.nil? ? nil : r - buffer_beg
+end
+
+def process_xml_content(xml_content, f, odir, option = {})
+	## read files
+	#xml_file = File.read(f)
+	puts "processing #{f}"
+
+	sum_annotations = 0
+	sum_invalids = 0
+	sum_fixed = 0
+	sum_skipped = 0
+
+	filebase = File.basename(f, "XML")
+	outfilename = "#{filebase}jsonl"
+	outfilepath = File.join(odir, outfilename) unless odir.nil?
+	File.open(outfilepath, 'w') do |outfile|
+		PubTatorBioC_to_PubAnnotationJSON(xml_content, option) do |annotations, annotations_count, invalids_count, fixed_count, skipped_count|
+			outfile.write(annotations.to_json + "\n")
+			sum_annotations += annotations_count
+			sum_invalids += invalids_count
+			sum_fixed += fixed_count
+			sum_skipped += skipped_count
+		end
+	rescue => e
+		warn "    Something went wrong: " + e.message
+	end
+
+	rate_invalids = 100 * sum_invalids.to_f / sum_annotations
+	rate_fixed = 100 * sum_fixed.to_f / sum_invalids
+
+	puts "    All annotation: #{sum_annotations}"
+	puts "    Invalid annotations: #{sum_invalids} (#{rate_invalids.round(2) }%)"
+	puts "    Fixed annotations: #{sum_fixed} (#{rate_fixed.round(2)}%)" if sum_invalids > 0
+	puts "    Skipped_annotations: #{sum_skipped}"
+
+	[sum_annotations, sum_invalids, sum_fixed, sum_skipped]
 end
 
 
 if __FILE__ == $0
 	odir = 'output'
-	mode = :go # the behavior for invalid annotations. Options include :report, :skip, :fix, or :go (default)
+	option = {
+		fix_p: false,
+		skip_p: false,
+		verbose_p: false
+	}
 
 	## command line option processing
 	require 'optparse'
@@ -100,16 +146,16 @@ if __FILE__ == $0
 			odir.sub(%r|/+|, '')
 		end
 
-		opts.on('-v', '--validate', 'tells it to validate annotations during the conversion') do
-			mode = :report
+		opts.on('-f', '--fix', 'tells it to try to fix invalid annotations during the conversion') do
+			option[:fix_p] = true
 		end
 
 		opts.on('-s', '--skip', 'tells it to skip invalid annotations during the conversion') do
-			mode = :skip
+			option[:skip_p] = true
 		end
 
-		opts.on('-f', '--fix', 'tells it to try to fix invalid annotations during the conversion') do
-			mode = :fix
+		opts.on('-v', '--verbose', 'tells it to print out invalid annotations') do
+			option[:verbose_p] = true
 		end
 
 		opts.on('-h', '--help', 'displays this screen') do
@@ -129,57 +175,53 @@ if __FILE__ == $0
 		end
 	end
 
-	def process_xml_content(xml_content, f, odir, mode)
-		## read files
-		#xml_file = File.read(f)
-		puts "processing #{f}"
-
-		total_annotations = 0
-		total_invalids = 0
-		total_fixed = 0
-		total_skipped = 0
-
-		filebase = File.basename(f, "XML")
-		outfilename = "#{filebase}jsonl"
-		outfilepath = File.join(odir, outfilename) unless odir.nil?
-		File.open(outfilepath, 'w') do |outfile|
-			PubTatorBioC_to_PubAnnotationJSON(xml_content, mode) do |annotations, annotations_count, invalids_count, fixed_count, skipped_count|
-				outfile.write(annotations.to_json + "\n")
-				total_annotations += annotations_count
-				total_invalids += invalids_count
-				total_fixed += fixed_count
-				total_skipped += skipped_count
-			end
-		end
-
-		puts "    Total annotation: #{total_annotations}"
-		puts "    Invalid annotations: #{total_invalids} (#{100 * total_invalids.to_f/total_annotations}%)"
-		puts "    Fixed annotations: #{total_fixed} (#{100 * total_fixed.to_f/total_invalids}%)"
-		puts "    Skipped_annotations: #{total_skipped}"
-	end
+	total_annotations = 0
+	total_invalids = 0
+	total_fixed = 0
+	total_skipped = 0
 
 	ARGV.each do |f|
 		if f.end_with?('.tar.gz')
-		    puts "Extracting .tar.gz file: #{f}"
-		    Zlib::GzipReader.open(f) do |gz|
-		      Gem::Package::TarReader.new(gz) do |tar|
-		        tar.each do |entry|
-		          next unless entry.file? && entry.full_name =~ /\.xml$/i
-		          puts "Processing file in tar: #{entry.full_name}"
+			puts "Extracting .tar.gz file: #{f}"
+			Zlib::GzipReader.open(f) do |gz|
+				Gem::Package::TarReader.new(gz) do |tar|
+					tar.each do |entry|
+						next unless entry.file? && entry.full_name =~ /\.xml$/i
+						puts "Processing file in tar: #{entry.full_name}"
 
-            	  # Read the file content directly from the tar archive
-            	  xml_content = entry.read
-            	  process_xml_content(xml_content, entry.full_name, odir, mode)
-        		end
-      		  end
-    		end
+						# Read the file content directly from the tar archive
+						xml_content = entry.read
+						sum_annotations, sum_invalids, sum_fixed, sum_skipped = process_xml_content(xml_content, entry.full_name, odir, option)
+						total_annotations += sum_annotations
+						total_invalids += sum_invalids
+						total_fixed += sum_fixed
+						total_skipped += sum_skipped
+					end
+				end
+			end
 		elsif f =~ /\.xml$/i
-		  # Process regular XML file from filesystem
-    	  xml_content = File.read(f)
-    	  process_xml_content(xml_content, f, odir, mode)
+			# Process regular XML file from filesystem
+			xml_content = File.read(f)
+			sum_annotations, sum_invalids, sum_fixed, sum_skipped = process_xml_content(xml_content, f, odir, option)
+			total_annotations += sum_annotations
+			total_invalids += sum_invalids
+			total_fixed += sum_fixed
+			total_skipped += sum_skipped
 		else
-    	  puts "Unsupported file type: #{f}"
+		  puts "Unsupported file type: #{f}"
 		end
 	end
 
+	rate_invalids = 100 * total_invalids.to_f / total_annotations
+	rate_fixed = 100 * total_fixed.to_f / total_invalids
+
+	total_remaining_problems = total_invalids - total_fixed
+	rate_remaining_problems = 100 * total_remaining_problems.to_f / total_annotations
+
+	puts "Total ====="
+	puts "    Annotations: #{total_annotations}"
+	puts "    Invalid annotations: #{total_invalids} (#{rate_invalids.round(2) }%)"
+	puts "    Fixed annotations: #{total_fixed} (#{rate_fixed.round(2)}%)" if total_invalids > 0
+	puts "    Remaining problems: #{total_remaining_problems} (#{rate_remaining_problems.round(2)}%)"
+	puts "    Skipped_annotations: #{total_skipped}"
 end
