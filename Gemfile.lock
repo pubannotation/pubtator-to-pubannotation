@@ -1,7 +1,9 @@
 GEM
   remote: https://rubygems.org/
   specs:
-    ox (2.14.18)
+    bigdecimal (3.1.9)
+    ox (2.14.21)
+      bigdecimal (>= 3.0)
 
 PLATFORMS
   ruby
