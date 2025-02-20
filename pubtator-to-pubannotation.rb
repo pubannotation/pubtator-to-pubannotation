@@ -109,7 +109,7 @@ def get_adjustment(text, s_beg, s_end, lex)
 
 	b_text = text[b_beg ... b_end]
 	r = b_text&.rindex(lex)
-	r.nil? ? nil : r - b_beg
+	r.nil? ? nil : r - (s_beg - b_beg)
 end
 
 def process_xml_content(xml_content, f, odir, option = {})
