@@ -17,8 +17,14 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 
 	parsed_xml.locate('collection/document').each do |doc|
 		docid = doc.locate('id').first.text
+		pmc_id = nil
 
 		doc.locate('passage').each do |passage|
+			_pmc_id = passage.locate("infon[@key=article-id_pmc]").first&.text
+			if _pmc_id
+				pmc_id = _pmc_id
+			end
+
 			denotations = []
 			attributes = []
 
@@ -86,7 +92,9 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 
 			next if denotations.empty?
 			raise "Invalid passage. Annotations exist but text does not exist." if text.nil?
-			annotations = {sourcedb:'PubMed', sourceid: docid, text: text, denotations: denotations, attributes: attributes}
+
+			raise "No PMC ID." if pmc_id.nil? || pmc_id.empty?
+			annotations = {sourcedb:'PMC', sourceid: pmc_id, text: text, denotations: denotations, attributes: attributes}
 			yield annotations, annotations_count, invalids_count, fix_count, skip_count
 		end
 	end
