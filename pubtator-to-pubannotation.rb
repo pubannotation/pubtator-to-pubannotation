@@ -4,7 +4,7 @@ require 'json'
 require 'zlib'
 require 'rubygems/package'
 
-BUFFER_SIZE = 20
+BUFFER_SIZE = 10
 WINDOW_SIZE	= 10
 
 def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
@@ -93,8 +93,12 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 			next if denotations.empty?
 			raise "Invalid passage. Annotations exist but text does not exist." if text.nil?
 
-			raise "No PMC ID." if pmc_id.nil? || pmc_id.empty?
-			annotations = {sourcedb:'PMC', sourceid: pmc_id, text: text, denotations: denotations, attributes: attributes}
+			sourcedb, sourceid = if pmc_id.nil? || pmc_id.empty?
+				['PubMed', docid]
+			else
+				['PMC', pmc_id]
+			end
+			annotations = {sourcedb:sourcedb, sourceid: sourceid, text: text, denotations: denotations, attributes: attributes}
 			yield annotations, annotations_count, invalids_count, fix_count, skip_count
 		end
 	end
