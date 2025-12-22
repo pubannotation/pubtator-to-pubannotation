@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 require 'ox'
 require 'json'
+
+# Preserve whitespace in text nodes to maintain correct annotation offsets
+Ox.default_options = Ox.default_options.merge(skip: :skip_none)
 require 'zlib'
 require 'rubygems/package'
 
@@ -8,11 +11,6 @@ BUFFER_SIZE = 10
 WINDOW_SIZE	= 10
 
 def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
-	annotations_count = 0
-	invalids_count = 0
-	fix_count = 0
-	skip_count = 0
-
 	parsed_xml = Ox.parse(xml_file)
 
 	parsed_xml.locate('collection/document').each do |doc|
@@ -20,6 +18,11 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 		pmc_id = nil
 
 		doc.locate('passage').each do |passage|
+			# Per-passage counters (reset for each passage)
+			annotations_count = 0
+			invalids_count = 0
+			fix_count = 0
+			skip_count = 0
 			_pmc_id = passage.locate("infon[@key=article-id_pmc]").first&.text
 			if _pmc_id
 				pmc_id = _pmc_id
