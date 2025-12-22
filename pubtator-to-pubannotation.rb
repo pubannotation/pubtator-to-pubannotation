@@ -93,10 +93,10 @@ def PubTatorBioC_to_PubAnnotationJSON(xml_file, option)
 			next if denotations.empty?
 			raise "Invalid passage. Annotations exist but text does not exist." if text.nil?
 
-			sourcedb, sourceid = if pmc_id.nil? || pmc_id.empty?
-				['PubMed', docid]
-			else
+			sourcedb, sourceid = if pmc_id && pmc_id == docid
 				['PMC', pmc_id]
+			else
+				['PubMed', docid]
 			end
 			annotations = {sourcedb:sourcedb, sourceid: sourceid, text: text, denotations: denotations, attributes: attributes}
 			yield annotations, annotations_count, invalids_count, fix_count, skip_count
@@ -134,8 +134,8 @@ def process_xml_content(xml_content, f, odir, option = {})
 	sum_fixed = 0
 	sum_skipped = 0
 
-	filebase = File.basename(f, "XML")
-	outfilename = "#{filebase}jsonl"
+	filebase = f.sub(/\.xml\z/i, "")
+	outfilename = "#{filebase}.jsonl"
 	outfilepath = File.join(odir, outfilename) unless odir.nil?
 	File.open(outfilepath, 'w') do |outfile|
 		PubTatorBioC_to_PubAnnotationJSON(xml_content, option) do |annotations, annotations_count, invalids_count, fixed_count, skipped_count|
